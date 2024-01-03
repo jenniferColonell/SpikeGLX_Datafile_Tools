@@ -229,20 +229,22 @@ end % ChanGainNI
 % Index into these with original (acquired) channel IDs.
 %
 function [APgain,LFgain] = ChanGainsIM(meta)
+    % list of probe types with NP 1.0 imro format
+    np1_imro = [0,1020,1030,1200,1100,1120,1121,1122,1123,1300];
+    % number of channels acquired
+    acqCountList = str2num(meta.acqApLfSy);
+
+    APgain = zeros(acqCountList(1));     % default type = float64
+    LFgain = zeros(acqCountList(2));     % empty array for 2.0
 
     if isfield(meta,'imDatPrb_type')
         probeType = str2double(meta.imDatPrb_type);
     else
         probeType = 0;
     end
-    if (probeType == 21) || (probeType == 24)
-        [AP,LF,~] = SGLX_readMeta.ChannelCountsIM(meta);
-        % NP 2.0; APgain = 80 for all channels
-        APgain = zeros(AP,1,'double');
-        APgain = APgain + 80;
-        % No LF channels, set gain = 0
-        LFgain = zeros(LF,1,'double');
-    else
+
+    if ismember(probeType, np1_imro)
+        % imro + probe allows setting gain independently for each channel
         % 3A or 3B data?
         % 3A metadata has field "typeEnabled" which was replaced
         % with "typeImEnabled" and "typeNiEnabled" in 3B.
@@ -259,6 +261,30 @@ function [APgain,LFgain] = ChanGainsIM(meta)
         end
         APgain = double(cell2mat(C(1)));
         LFgain = double(cell2mat(C(2)));
+    else               
+        % get gain from  imChan0apGain, if present
+        if isfield(meta,'imChan0apGain')
+            APgain = APgain + str2num(meta.imChan0apGain);
+            if acqCountList(2) > 0               
+                LFgain = LFgain + str2num(meta.imChan0lfGain);
+            end
+        elseif (probeType == 1110)
+            % active UHD, for metadata lacking imChan0apGain, get gain from
+            % imro table header
+            currList = sscanf(meta.imroTbl, '(%d,%d,%d,%d,%d');
+            APgain = APgain + currList(4);
+            LFgain = LFgain + currList(5);
+        elseif (probeType == 21) || (probeType == 24)
+            % development NP 2.0; APGain = 80 for all AP
+            % return 0 for LFgain (no LF channels)
+            APgain = APgain + 80;        
+        elseif (probeType == 2013)
+            % commercial NP 2.0; APGain = 80 for all AP
+            APgain = APgain + 100;
+        else
+            fprintf('unknown gain, setting APgain to 1\n');
+            APgain = APgain + 1;
+        end
     end
 end % ChanGainsIM
 
@@ -322,6 +348,27 @@ function dataArray = GainCorrectIM(dataArray, chanList, meta)
         dataArray(j,:) = dataArray(j,:) * conv;
     end
 end % GainCorrectIM
+
+% =========================================================
+% Return array of survey bank times
+%
+%
+function bankTimes = svyBankTimes(meta)
+
+    % Look up gain with acquired channel ID
+    C = textscan(meta.svySBTT, '(%d %d %d %d', ...
+                'EndOfLine', ')' );
+    
+    nBank = numel(C{1}) + 1;  % bank0/shank0 is at time = 0
+    srate = SGLX_readMeta.SampRate(meta);
+
+    bankTimes = zeros([nBank,4], "double");
+    bankTimes(2:nBank,1) = double(C{1});
+    bankTimes(2:nBank,2) = double(C{2});
+    bankTimes(2:nBank,3) = double(C{3})/srate;
+    bankTimes(2:nBank,4) = double(C{4})/srate;
+
+end % svyBankTimes
 
 end % SGLX_readMeta methods
 

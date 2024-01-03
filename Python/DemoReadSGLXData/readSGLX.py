@@ -150,26 +150,51 @@ def ChanGainNI(ichan, savedMN, savedMA, meta):
 # Index into these with the original (acquired) channel IDs.
 #
 def ChanGainsIM(meta):
-    imroList = meta['imroTbl'].split(sep=')')
-    # One entry for each channel plus header entry,
-    # plus a final empty entry following the last ')'
-    nChan = len(imroList) - 2
-    APgain = np.zeros(nChan)        # default type = float
-    LFgain = np.zeros(nChan)
+    # list of probe types with NP 1.0 imro format
+    np1_imro = [0,1020,1030,1200,1100,1120,1121,1122,1123,1300]
+    # number of channels acquired
+    acqCountList = meta['acqApLfSy'].split(sep=',')
+    APgain = np.zeros(int(acqCountList[0]))     # default type = float64
+    LFgain = np.zeros(int(acqCountList[1]))     # empty array for 2.0
+    
     if 'imDatPrb_type' in meta:
         probeType = int(meta['imDatPrb_type'])
     else:
         probeType = 0
-    if (probeType == 21) or (probeType == 24):
-        # NP 2.0; APGain = 80 for all AP
-        # return 0 for LFgain (no LF channels)
-        APgain = APgain + 80
-    else:
-        # 3A, 3B1, 3B2 (NP 1.0)
-        for i in range(0, nChan):
+    
+    if sum(np.isin(np1_imro, probeType)):
+        # imro + probe allows setting gain independently for each channel
+        imroList = meta['imroTbl'].split(sep=')')
+        # One entry for each channel plus header entry,
+        # plus a final empty entry following the last ')'        
+        for i in range(0, int(acqCountList[0])):
             currList = imroList[i+1].split(sep=' ')
-            APgain[i] = currList[3]
-            LFgain[i] = currList[4]
+            APgain[i] = float(currList[3])
+            LFgain[i] = float(currList[4])
+    else:                 
+        # get gain from  imChan0apGain
+        if 'imChan0apGain' in meta:
+            APgain = APgain + float(meta['imChan0apGain'])
+            if int(acqCountList[1]) > 0:                
+                LFgain = LFgain + float(meta['imChan0lfGain'])
+        elif (probeType == 1110):
+            # active UHD, for metadata lacking imChan0apGain, get gain from
+            # imro table header
+            imroList = meta['imroTbl'].split(sep=')')
+            currList = imroList[0].split(sep=',')
+            APgain = APgain + float(currList[3])
+            LFgain = LFgain + float(currList[4])
+        elif (probeType == 21) or (probeType == 24):
+            # development NP 2.0; APGain = 80 for all AP
+            # return 0 for LFgain (no LF channels)
+            APgain = APgain + 80        
+        elif (probeType == 2013):
+            # commercial NP 2.0; APGain = 80 for all AP
+            APgain = APgain + 100
+        else:
+            print('unknown gain, setting APgain to 1')
+            APgain = APgain + 1
+
     return(APgain, LFgain)
 
 
@@ -337,7 +362,7 @@ def main():
     firstSamp = int(sRate*tStart)
     lastSamp = int(sRate*tEnd)
     # array of times for plot
-    tDat = np.arange(firstSamp, lastSamp+1)
+    tDat = np.arange(firstSamp, lastSamp+1, dtype='uint64')
     tDat = 1000*tDat/sRate      # plot time axis in msec
 
     rawData = makeMemMapRaw(binFullPath, meta)

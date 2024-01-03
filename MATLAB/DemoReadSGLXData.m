@@ -13,7 +13,6 @@ meta = SGLX_readMeta.ReadMeta(binName, path);
 % Get first one second of data
 nSamp = floor(1.0 * SGLX_readMeta.SampRate(meta));
 dataArray = SGLX_readMeta.ReadBin(0, nSamp, meta, binName, path);
-
 dataType = 'A';         %set to 'A' for analog, 'D' for digital data
 
 % For an analog channel: gain correct saved channel ch (1-based for MATLAB).
@@ -34,7 +33,7 @@ if dataType == 'A'
     else
         dataArray = SGLX_readMeta.GainCorrectNI(dataArray, [ch], meta);
     end
-    plot(dataArray(ch,:));
+    plot(1e6*dataArray(ch,:));
 else
     digArray = SGLX_readMeta.ExtractDigital(dataArray, meta, dw, dLineList);
     for i = 1:numel(dLineList)

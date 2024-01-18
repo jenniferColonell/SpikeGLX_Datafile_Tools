@@ -370,6 +370,67 @@ function bankTimes = svyBankTimes(meta)
 
 end % svyBankTimes
 
+% =========================================================
+% Write metadata file using values in meta structure
+%
+%
+function writeMeta(meta, newPath)
+
+    % Write out metadata file. Tag order matches order of addition to 
+    % structure when read
+    fmeta = fopen( newPath, 'w');
+    tildeTags{1} = 'muxTbl';
+    tildeTags{2} = 'imroTbl';
+    tildeTags{3} = 'snsChanMap';
+    tildeTags{4} = 'snsGeomMap';
+    tildeTags{5} = 'snsShankMap';
+
+    fn = fieldnames(meta);
+    for i = 1:numel(fieldnames(meta))
+        currTag = fn{i};
+        tagFound = find(strcmp(tildeTags, currTag));
+        if isempty(tagFound)
+            currLine = sprintf('%s=%s',currTag,meta.(currTag));
+            fprintf(fmeta,'%s\n',currLine);
+        else
+            currLine = sprintf('~%s=%s',currTag,meta.(currTag));
+            fprintf(fmeta,'%s\n',currLine);
+        end
+    end
+    
+end % writeMeta
+
+% ===========================================================
+% parse SGLX  imec filename with or without extension, return 
+% runName,
+% gateStr, e.g. 'g0'
+% triggerStr, e.g. 't0' or 'tcat'
+% probeStr, e.g. 'imec0'
+% streamStr, e.g. 'ap' or 'lf'
+%
+%
+function [runName,gateStr,triggerStr,probeStr,streamStr] = parseFileName(fileName)
+
+    % Remove extension, if present
+    if endsWith(fileName, '.bin')
+        fileName = fileName(1:length(fileName)-4);
+    elseif endsWith(fileName, '.meta')
+        fileName = fileName(1:length(fileName)-5);
+    end
+
+    % Find periods and underscores
+    perPos = strfind(fileName,'.');
+    usPos = strfind(fileName,'_');
+    nPer = length(perPos);
+    nUS = length(usPos);
+    streamStr = fileName(perPos(nPer)+1:end);
+    probeStr = fileName(perPos(nPer-1)+1:perPos(nPer)-1);
+    triggerStr = fileName(usPos(nUS)+1:perPos(nPer-1)-1);
+    gateStr = fileName(usPos(nUS-1)+1:usPos(nUS)-1);
+    runName = fileName(1:usPos(nUS-1)-1);
+
+end % parseFileName
+
 end % SGLX_readMeta methods
 
 end % SGLX_readMeta classdef

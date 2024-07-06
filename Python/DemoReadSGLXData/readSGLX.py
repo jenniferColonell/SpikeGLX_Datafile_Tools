@@ -58,8 +58,14 @@ def readMeta(binFullPath):
 def SampRate(meta):
     if meta['typeThis'] == 'imec':
         srate = float(meta['imSampRate'])
-    else:
+    elif meta['typeThis'] == 'nidq':
         srate = float(meta['niSampRate'])
+    elif meta['typeThis'] == 'obx':
+        srate = float(meta['obSampRate'])
+    else:
+        print('Error: unknown stream type')
+        srate = 1
+        
     return(srate)
 
 
@@ -76,8 +82,16 @@ def Int2Volts(meta):
         else:
             maxInt = 512
         fI2V = float(meta['imAiRangeMax'])/maxInt
+    elif meta['typeThis'] == 'nidq':
+        maxInt = int(meta['niMaxInt'])
+        fI2V = float(meta['niAiRangeMax'])/maxInt
+    elif meta['typeThis'] == 'obx':
+        maxInt = int(meta['obMaxInt'])
+        fI2V = float(meta['obAiRangeMax'])/maxInt
     else:
-        fI2V = float(meta['niAiRangeMax'])/32768
+        print('Error: unknown stream type')
+        fI2V = 1
+        
     return(fI2V)
 
 
@@ -132,10 +146,21 @@ def ChannelCountsIM(meta):
     SY = int(chanCountList[2])
     return(AP, LF, SY)
 
+# Return counts of each obx channel type that composes the timepoints
+# stored in the binary files.
+#
+def ChannelCountsOBX(meta):
+    chanCountList = meta['snsXaDwSy'].split(sep=',')
+    XA = int(chanCountList[0])
+    DW = int(chanCountList[1])
+    SY = int(chanCountList[2])
+    return(XA, DW, SY)
+
 
 # Return gain for ith channel stored in nidq file.
 # ichan is a saved channel index, rather than the original (acquired) index.
 #
+# Note: there is nomatching function for OBX, where the gain is fixed = 1
 def ChanGainNI(ichan, savedMN, savedMA, meta):
     if ichan < savedMN:
         gain = float(meta['niMNGain'])
@@ -172,7 +197,7 @@ def ChanGainsIM(meta):
             APgain[i] = float(currList[3])
             LFgain[i] = float(currList[4])
     else:                 
-        # get gain from  imChan0apGain
+        # get gain from imChan0apGain
         if 'imChan0apGain' in meta:
             APgain = APgain + float(meta['imChan0apGain'])
             if int(acqCountList[1]) > 0:                
@@ -217,10 +242,28 @@ def GainCorrectNI(dataArray, chanList, meta):
     # in chanList, so output matches that shape
     convArray = np.zeros(dataArray.shape, dtype=float)
     for i in range(0, len(chanList)):
-        j = chanList[i]             # index into timepoint
+        j = chanList[i]             # index in saved data
         conv = fI2V/ChanGainNI(j, MN, MA, meta)
         # dataArray contains only the channels in chanList
         convArray[i, :] = dataArray[i, :] * conv
+    return(convArray)
+
+# Having accessed a block of raw obx data using makeMemMapRaw, convert
+# values to volts. The conversion is only applied to the
+# saved-channel indices in chanList. Remember, saved-channel indices are
+# in the range [0:nSavedChans-1]. The dimensions of dataArray remain
+# [2,6,20]  just these three channels (zero based, as they appear in SGLX).
+#
+def GainCorrectOBX(dataArray, chanList, meta):
+
+    fI2V = Int2Volts(meta)
+
+    # make array of floats to return. dataArray contains only the channels
+    # in chanList, so output matches that shape
+    convArray = np.zeros(dataArray.shape, dtype=float)
+    for i in range(0, len(chanList)):
+        # dataArray contains only the channels in chanList
+        convArray[i, :] = dataArray[i, :] * fI2V
     return(convArray)
 
 
@@ -291,7 +334,7 @@ def ExtractDigital(rawData, firstSamp, lastSamp, dwReq, dLineList, meta):
             return(digArray)
         else:
             digCh = AP + LF + dwReq
-    else:
+    elif meta['typeThis'] == 'nidq':
         MN, MA, XA, DW = ChannelCountsNI(meta)
         if dwReq > DW-1:
             print("Maximum digital word in file = %d" % (DW-1))
@@ -299,6 +342,16 @@ def ExtractDigital(rawData, firstSamp, lastSamp, dwReq, dLineList, meta):
             return(digArray)
         else:
             digCh = MN + MA + XA + dwReq
+    elif meta['typeThis'] == 'obx':
+        XA, DW, SY = ChannelCountsOBX(meta)
+        if dwReq > DW-1:
+            print("Maximum digital word in file = %d" % (DW-1))
+            digArray = np.zeros((0), 'uint8')
+            return(digArray)
+        else:
+            digCh = XA + dwReq
+    else:
+        print('unknown data stream')
 
     selectData = np.ascontiguousarray(rawData[digCh, firstSamp:lastSamp+1], 'int16')
     nSamp = lastSamp-firstSamp + 1
@@ -339,12 +392,12 @@ def main():
 
     # Other parameters about what data to read
     tStart = 0
-    tEnd = 1
+    tEnd = 2
     dataType = 'A'    # 'A' for analog, 'D' for digital data
 
     # For analog channels: zero-based index of a channel to extract,
     # gain correct and plot (plots first channel only)
-    chanList = [10]
+    chanList = [0]
 
     # For a digital channel: zero based index of the digital word in
     # the saved file. For imec data there is never more than one digital word.
@@ -372,12 +425,15 @@ def main():
         if meta['typeThis'] == 'imec':
             # apply gain correction and convert to uV
             convData = 1e6*GainCorrectIM(selectData, chanList, meta)
-        else:
+        elif meta['typeThis'] == 'nidq':
             MN, MA, XA, DW = ChannelCountsNI(meta)
             # print("NI channel counts: %d, %d, %d, %d" % (MN, MA, XA, DW))
             # apply gain correction and convert to mV
             convData = 1e3*GainCorrectNI(selectData, chanList, meta)
-
+        elif meta['typeThis'] == 'obx':
+            # Gain correct is just conversion to volts           
+            convData = 1e3*GainCorrectOBX(selectData, chanList, meta)
+            
         # Plot the first of the extracted channels
         fig, ax = plt.subplots()
         ax.plot(tDat, convData[0, :])

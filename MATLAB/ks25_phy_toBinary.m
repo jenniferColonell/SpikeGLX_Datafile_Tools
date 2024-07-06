@@ -23,7 +23,7 @@ function ks25_phy_toBinary( varargin )
 
 % user parameters
 modStr = 'ksprocUW'; % will be added to the run name of the output binary and metadata
-bRunCWaves = 1; % whether to run C_Waves
+bRunCWaves = 0; % whether to run C_Waves
 exePath = 'C:\Users\colonellj\Documents\C_Waves-win'; % path to C_Waves directory on local machine
 
 if isempty(varargin )
@@ -93,12 +93,13 @@ end
 
 % get number of data points
 fp = dir(fprocFullPath);
-procSizeBytes = fp.bytes;  %double
-totNT = procSizeBytes/(Nchan*2); %total number of time points
+procSizeBytes = fp.bytes  %double
+Nchan
+totNT = procSizeBytes/(Nchan*2) %total number of time points
 fprintf('Total time points in binary %d\n', totNT);
 if totNT ~= floor(totNT)
     fprintf('binary doesn not match phy output');
-    exit;
+    return;
 end
 
 fid = fopen(fprocFullPath, 'r');
@@ -107,7 +108,7 @@ fidW = fopen(outFullPath, 'w'); % open for writing processed data, transposed
 % NT is set here to the KS default, but the results are independent of the
 % value of NT used by KS2.5.
 % NOTE: this is not true for KS2.0.
-NT = 65000;
+NT = 65600;
 
 Nbatch = floor(totNT/NT);
 batchstart = 0:NT:NT*Nbatch; % batches start at these timepoints
@@ -120,7 +121,7 @@ for ibatch = 1:Nbatch
 end
 % get the end of the file
 NTlast = totNT - Nbatch*NT;
-offset = 2*Nchan*batchstart(Nbatch);
+offset = 2*Nchan*batchstart(Nbatch+1);
 fseek(fid, offset, 'bof');
 dat = fread(fid, [Nchan NTlast], '*int16');
 dat = int16(single(dat')/Wrot);
@@ -164,7 +165,7 @@ for i = 1:numel(mapTags)
         new_map_ind(1) = 1; % for header entry
         new_map_ind(2:Nchan+1) = chanMap(1:Nchan) + 2;
         mapArrNew = mapArr(new_map_ind);
-        if mapTags{i} == 'snsChanMap'
+        if strcmp(mapTags{i},'snsChanMap')
             % chanMap header to match saved entries
             mapArrNew(1) = {sprintf('(%d,0,0)', Nchan)};
         end

@@ -28,10 +28,13 @@ dw = 1;
 dLineList = [0,1,6];
 
 if dataType == 'A'
-    if strcmp(meta.typeThis, 'imec')
+    switch meta.typeThis
+    case 'imec'
         dataArray = SGLX_readMeta.GainCorrectIM(dataArray, [ch], meta);
-    else
+    case 'nidq'
         dataArray = SGLX_readMeta.GainCorrectNI(dataArray, [ch], meta);
+    case 'obx'
+        dataArray = SGLX_readMeta.GainCorrectOBX(dataArray, [ch], meta);
     end
     plot(1e6*dataArray(ch,:));
 else

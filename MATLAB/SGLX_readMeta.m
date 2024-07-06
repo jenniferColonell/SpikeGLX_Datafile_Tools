@@ -97,24 +97,34 @@ end % ReadBin
 %
 function digArray = ExtractDigital(dataArray, meta, dwReq, dLineList)
     % Get channel index of requested digital word dwReq
-    if strcmp(meta.typeThis, 'imec')
-        [AP, LF, SY] = SGLX_readMeta.ChannelCountsIM(meta);
-        if SY == 0
-            fprintf('No imec sync channel saved\n');
-            digArray = [];
-            return;
-        else
-            digCh = AP + LF + dwReq;
-        end
-    else
-        [MN,MA,XA,DW] = SGLX_readMeta.ChannelCountsNI(meta);
-        if dwReq > DW
-            fprintf('Maximum digital word in file = %d\n', DW);
-            digArray = [];
-            return;
-        else
-            digCh = MN + MA + XA + dwReq;
-        end
+    switch meta.typeThis
+        case 'imec'
+            [AP, LF, SY] = SGLX_readMeta.ChannelCountsIM(meta);
+            if SY == 0
+                fprintf('No imec sync channel saved\n');
+                digArray = [];
+                return;
+            else
+                digCh = AP + LF + dwReq;
+            end
+        case 'nidq'
+            [MN,MA,XA,DW] = SGLX_readMeta.ChannelCountsNI(meta);
+            if dwReq > DW
+                fprintf('Maximum digital word in file = %d\n', DW);
+                digArray = [];
+                return;
+            else
+                digCh = MN + MA + XA + dwReq;
+            end
+        case 'obx'
+            [XA,DW,SY] = SGLX_readMeta.ChannelCountsOBX(meta);
+            if dwReq > DW
+                fprintf('Maximum digital word in file = %d\n', DW);
+                digArray = [];
+                return;
+            else
+                digCh = XA + dwReq;
+            end
     end
     [~,nSamp] = size(dataArray);
     digArray = zeros(numel(dLineList), nSamp, 'uint8');
@@ -128,10 +138,13 @@ end % ExtractDigital
 % Return sample rate as double.
 %
 function srate = SampRate(meta)
-    if strcmp(meta.typeThis, 'imec')
-        srate = str2double(meta.imSampRate);
-    else
-        srate = str2double(meta.niSampRate);
+    switch meta.typeThis
+        case 'imec'
+            srate = str2double(meta.imSampRate);
+        case 'nidq'
+            srate = str2double(meta.niSampRate);
+        case 'obx'
+            srate = str2double(meta.obSampRate);
     end
 end % SampRate
 
@@ -146,15 +159,18 @@ end % SampRate
 % Note that each channel may have its own gain.
 %
 function fI2V = Int2Volts(meta)
-    if strcmp(meta.typeThis, 'imec')
-        if isfield(meta,'imMaxInt')
-            maxInt = str2num(meta.imMaxInt);
-        else
-            maxInt = 512;
-        end
-        fI2V = str2double(meta.imAiRangeMax) / maxInt;
-    else
-        fI2V = str2double(meta.niAiRangeMax) / 32768;
+    switch meta.typeThis
+        case 'imec'
+            if isfield(meta,'imMaxInt')
+                maxInt = str2num(meta.imMaxInt);
+            else
+                maxInt = 512;
+            end
+            fI2V = str2double(meta.imAiRangeMax) / maxInt;
+        case 'nidq'
+            fI2V = str2double(meta.niAiRangeMax) / str2double(meta.niMaxInt);
+        case 'obx'
+            fI2V = str2double(meta.obAiRangeMax) / str2double(meta.obMaxInt);
     end
 end % Int2Volts
 
@@ -205,12 +221,25 @@ function [MN,MA,XA,DW] = ChannelCountsNI(meta)
     DW = M(4);
 end % ChannelCountsNI
 
+% =========================================================
+% Return counts of each obx channel type that compose
+% the timepoints stored in binary file.
+%
+function [XA,DW,SY] = ChannelCountsOBX(meta)
+    M = str2num(meta.snsXaDwSy);
+    XA = M(1);
+    DW = M(2);
+    SY = M(3);
+end % ChannelCountsOBX
 
 % =========================================================
 % Return gain for ith channel stored in the nidq file.
 %
 % ichan is a saved channel index, rather than an original
 % (acquired) index.
+%
+% Note: there is no matching function for OBX, because 
+% the gain is fixed at 1.
 %
 function gain = ChanGainNI(ichan, savedMN, savedMA, meta)
     if ichan <= savedMN
@@ -300,6 +329,7 @@ end % ChanGainsIM
 %   [1:MN]      % all MN chans (MN from ChannelCountsNI)
 %   [2,6,20]    % just these three channels
 %
+%
 function dataArray = GainCorrectNI(dataArray, chanList, meta)
 
     [MN,MA] = SGLX_readMeta.ChannelCountsNI(meta);
@@ -311,6 +341,28 @@ function dataArray = GainCorrectNI(dataArray, chanList, meta)
         dataArray(j,:) = dataArray(j,:) * conv;
     end
 end % GainCorrectNI
+
+% =========================================================
+% Having acquired a block of raw obx data using ReadBin(),
+% convert values voltages. The conversion is only applied 
+% to the saved-channel indices in chanList. The conversion
+% factor is the same for all channels, because the gain is fixed.
+% Remember saved-channel indices are in range [1:nSavedChans].
+% The dimensions of the dataArray remain unchanged. ChanList
+% examples:
+%
+%   [2,6,20]    % just these three channels
+%
+%
+function dataArray = GainCorrectOBX(dataArray, chanList, meta)
+
+    fI2V = SGLX_readMeta.Int2Volts(meta);
+
+    for i = 1:length(chanList)
+        j = chanList(i);    % index into timepoint
+        dataArray(j,:) = dataArray(j,:) * fI2V;
+    end
+end % GainCorrectOBX
 
 
 % =========================================================

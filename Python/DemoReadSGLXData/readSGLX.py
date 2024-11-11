@@ -214,13 +214,18 @@ def ChanGainsIM(meta):
             # return 0 for LFgain (no LF channels)
             APgain = APgain + 80        
         elif (probeType == 2013):
-            # commercial NP 2.0; APGain = 80 for all AP
+            # commercial NP 2.0; APGain = 100 for all AP
             APgain = APgain + 100
         else:
             print('unknown gain, setting APgain to 1')
             APgain = APgain + 1
-
-    return(APgain, LFgain)
+    fI2V = Int2Volts(meta)
+    APChan0_to_uV = 1e6*fI2V/APgain[0]
+    if LFgain.size > 0:
+        LFChan0_to_uV = 1e6*fI2V/LFgain[0]
+    else:
+        LFChan0_to_uV = 0
+    return(APgain, LFgain, APChan0_to_uV, LFChan0_to_uV)
 
 
 # Having accessed a block of raw nidq data using makeMemMapRaw, convert
@@ -280,7 +285,7 @@ def GainCorrectOBX(dataArray, chanList, meta):
 def GainCorrectIM(dataArray, chanList, meta):
     # Look up gain with acquired channel ID
     chans = OriginalChans(meta)
-    APgain, LFgain = ChanGainsIM(meta)
+    APgain, LFgain, _, _ = ChanGainsIM(meta)
     nAP = len(APgain)
     nNu = nAP * 2
 

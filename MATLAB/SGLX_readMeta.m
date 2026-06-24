@@ -257,7 +257,7 @@ end % ChanGainNI
 %
 % Index into these with original (acquired) channel IDs.
 %
-function [APgain,LFgain] = ChanGainsIM(meta)
+function [APgain,LFgain, APChan0_to_uV, LFChan0_to_uV] = ChanGainsIM(meta)
     % list of probe types with NP 1.0 imro format
     np1_imro = [0,1020,1030,1200,1100,1120,1121,1122,1123,1300];
     % number of channels acquired
@@ -314,6 +314,13 @@ function [APgain,LFgain] = ChanGainsIM(meta)
             fprintf('unknown gain, setting APgain to 1\n');
             APgain = APgain + 1;
         end
+    end
+    fI2V = SGLX_readMeta.Int2Volts(meta);
+    APChan0_to_uV = 1e6*fI2V/APgain(1);
+    if size(LFgain) > 0
+        LFChan0_to_uV = 1e6*fI2V/LFgain(1);
+    else
+        LFChan0_to_uV = 0;
     end
 end % ChanGainsIM
 
